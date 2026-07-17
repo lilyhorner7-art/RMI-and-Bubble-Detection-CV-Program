@@ -1538,157 +1538,63 @@ class CalibrationState:
 # Video Thread
 # =============================================================================
 
+from PyQt5.QtCore import QThread, pyqtSignal
+import time
+
 class VideoThread(QThread):
     """
-    Handles camera or video file acquisition.
-
-    Supports:
-
-    - USB cameras
-    - Virtual cameras
-    - MP4 files
-    - Recorded experiments
-
-    Emits:
-
-    frame_ready(frame, timestamp, frame_number)
-
+    Worker thread that continuously reads frames from a VideoSource
+    and sends them to the ProcessingEngine for processing.
     """
-
-    # -------------------------------------------------------------------------
-    # Signals
-    # -------------------------------------------------------------------------
-
-    frame_ready = pyqtSignal(
-        np.ndarray,
-        float,
-        int
-    )
-
-
+    frame_ready = pyqtSignal(object, float, int)  # frame, timestamp, frame_number
     video_finished = pyqtSignal()
 
-
-    error_signal = pyqtSignal(
-        str
-    )
-
-
-    # -------------------------------------------------------------------------
-    # Initialisation
-    # -------------------------------------------------------------------------
-
-    def __init__(self, engine, video_source=0, parent=None):
-    super().__init__(parent)
-
-    self.engine = engine  # Store reference to ProcessingEngine
-    self.video_source = video_source
-
-    self.capture = None
-    self.running = False
-    self.paused = False
-    self.frame_number = 0
-    self.start_time = None
-    self.fps = 0.0
-    self.frame_interval = 0.0
-
-
-
-    # -------------------------------------------------------------------------
-    # Open Video Source
-    # -------------------------------------------------------------------------
-
-    def open_source(self):
+    def __init__(self, processing_engine, video_source, parent=None):
         """
-        Opens the selected camera or video file.
+        Parameters
+        ----------
+        processing_engine : ProcessingEngine
+            The engine that will process each frame.
+        video_source : VideoSource
+            The source from which frames are read.
+        parent : QObject, optional
+            Parent QObject for Qt ownership.
         """
+        super().__init__(parent)
 
+        # Store references
+        self.engine = processing_engine
+        self.video_source = video_source
 
-        self.capture = cv2.VideoCapture(
-            self.video_source
-        )
-
-
-        if not self.capture.isOpened():
-
-            self.error_signal.emit(
-                "Unable to open video source."
-            )
-
-            return False
-
-
-
-        # -------------------------------------------------------------
-        # Video metadata
-        # -------------------------------------------------------------
-
-        fps = self.capture.get(
-            cv2.CAP_PROP_FPS
-        )
-
-
-        if fps > 0:
-
-            self.fps = fps
-
-        else:
-
-            # Typical webcam fallback
-
-            self.fps = 30.0
-
-
-
-        self.frame_interval = (
-            1.0 / self.fps
-        )
-
-
+        # Internal state
         self.frame_number = 0
-
-
-        return True
-
-
+        self.frame_interval = 1.0 / getattr(video_source, "fps", 30)  # fallback to 30 FPS
+        self._running = True
 
     def run(self):
-    """
-    Main acquisition loop.
+        """Main loop: read frames, process them, emit signals."""
+        while self._running:
+            success, frame = self.video_source.read()
+            if not success:
+                self.video_finished.emit()
+                break
 
-    Runs independently from the GUI.
-    """
-    if not self.open_source():
-        return
+            self.frame_number += 1
+            timestamp = time.time()
 
-    self.running = True
-    self.start_time = time.perf_counter()
+            # Process the frame through the engine
+            self.engine.process_frame(frame)
 
-    while self.running:
-        # Pause handling
-        if self.paused:
-            self.msleep(50)
-            continue
+            # Emit raw frame for display
+            self.frame_ready.emit(frame, timestamp, self.frame_number)
 
-        # Read frame
-        success, frame = self.capture.read()
-        if not success:
-            self.video_finished.emit()
-            break
+            # Sleep to maintain FPS
+            self.msleep(int(self.frame_interval * 1000))
 
-        self.frame_number += 1
-
-        # Timestamp
-        timestamp = self.get_timestamp()
-
-        # *** NEW: Process the frame through ProcessingEngine ***
-        self.engine.process_frame(frame)
-
-        # Emit raw frame if still needed for display
-        self.frame_ready.emit(frame, timestamp, self.frame_number)
-
-        # Maintain approximate FPS
-        self.msleep(int(self.frame_interval * 1000))
+    def stop(self):
+        """Stop the video thread gracefully."""
+        self._running = False
+        self.wait()
 
 
 # =============================================================================
@@ -4572,122 +4478,131 @@ class MainDashboard(QMainWindow):
 
     It receives processed data from the processing pipeline and updates:
 
-        Q1
-            Live video
-
-        Q2
-            RMI plot
-
-        Q3
-            Bubble plot
-            Outlet ROI
-
-        Q4
-            ROI progression
-
+        Q1  Live video
+        Q2  RMI plot
+        Q3  Bubble plot + Outlet ROI
+        Q4  ROI progression
     """
 
-
+    # Experiment control signals
     processing_started = pyqtSignal()
-
     processing_paused = pyqtSignal()
-
     processing_resumed = pyqtSignal()
-
     processing_stopped = pyqtSignal()
 
+    # Export signals
     export_frame_requested = pyqtSignal()
-
     export_workbook_requested = pyqtSignal()
 
+    def __init__(self, state, parent=None):
+        super().__init__(parent)
+        self.state = state
 
-    def __init__(self):
-
-        super().__init__()
-
-        self.setWindowTitle(
-            "Computer Vision Mixing Analysis Version 6"
-        )
-
+        self.setWindowTitle("Computer Vision Mixing Analysis Version 6")
         self.showMaximized()
 
         self.build_interface()
-
         self.build_toolbar()
-
         self.build_statusbar()
-
 
     # -------------------------------------------------------------------------
     # Build Interface
     # -------------------------------------------------------------------------
-
     def build_interface(self):
         """
-        Creates the four-quadrant dashboard.
-
-        Q1  Live Video
-
-        Q2  RMI Plot + Controls
-
-        Q3  Bubble Plot + Outlet ROI
-
-        Q4  ROI Progression
+        Creates the four-quadrant dashboard layout.
         """
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
 
-        #
-        # Implemented in Sections 7–9.
-        #
-        pass
+        grid = QGridLayout()
+        central_widget.setLayout(grid)
 
+        # Q1: Live Video
+        self.video_label = QLabel("Live Video")
+        self.video_label.setAlignment(Qt.AlignCenter)
+        grid.addWidget(self.video_label, 0, 0)
+
+        # Q2: RMI Plot
+        self.rmi_plot = QLabel("RMI Plot")
+        self.rmi_plot.setAlignment(Qt.AlignCenter)
+        grid.addWidget(self.rmi_plot, 0, 1)
+
+        # Q3: Bubble Plot + Outlet ROI
+        self.bubble_plot = QLabel("Bubble Plot + Outlet ROI")
+        self.bubble_plot.setAlignment(Qt.AlignCenter)
+        grid.addWidget(self.bubble_plot, 1, 0)
+
+        # Q4: ROI Progression
+        self.roi_progression = QLabel("ROI Progression")
+        self.roi_progression.setAlignment(Qt.AlignCenter)
+        grid.addWidget(self.roi_progression, 1, 1)
 
     # -------------------------------------------------------------------------
     # Toolbar
     # -------------------------------------------------------------------------
-
     def build_toolbar(self):
-        """
-        Creates the experiment toolbar.
-        """
+        toolbar = self.addToolBar("Experiment Controls")
 
-        #
-        # Buttons added later:
-        #
-        # Start
-        # Pause
-        # Resume
-        # Stop
-        # Export PNG
-        # Save Workbook
-        #
-        pass
+        start_btn = QAction("Start", self)
+        start_btn.triggered.connect(self.processing_started.emit)
+        toolbar.addAction(start_btn)
 
+        pause_btn = QAction("Pause", self)
+        pause_btn.triggered.connect(self.processing_paused.emit)
+        toolbar.addAction(pause_btn)
+
+        resume_btn = QAction("Resume", self)
+        resume_btn.triggered.connect(self.processing_resumed.emit)
+        toolbar.addAction(resume_btn)
+
+        stop_btn = QAction("Stop", self)
+        stop_btn.triggered.connect(self.processing_stopped.emit)
+        toolbar.addAction(stop_btn)
+
+        export_png_btn = QAction("Export PNG", self)
+        export_png_btn.triggered.connect(self.export_frame_requested.emit)
+        toolbar.addAction(export_png_btn)
+
+        save_workbook_btn = QAction("Save Workbook", self)
+        save_workbook_btn.triggered.connect(self.export_workbook_requested.emit)
+        toolbar.addAction(save_workbook_btn)
 
     # -------------------------------------------------------------------------
     # Status Bar
     # -------------------------------------------------------------------------
-
     def build_statusbar(self):
+        self.statusBar().showMessage("Ready")
+
+    # -------------------------------------------------------------------------
+    # Slot: Update Dashboard
+    # -------------------------------------------------------------------------
+    def update_metrics(self, frame, rmi_results, bubbles):
         """
-        Creates the experiment status bar.
-
-        Displays:
-
-            FPS
-
-            Frame
-
-            Timestamp
-
-            Current RMI
-
-            Bubble Count
-
+        Update all dashboard quadrants with the latest processed data.
         """
+        # Q1: Live video
+        self.video_label.setPixmap(QPixmap.fromImage(self.convert_frame_to_qimage(frame)))
 
-        self.statusBar().showMessage(
-            "Ready"
-        )
+        # Q2: RMI plot (placeholder)
+        if rmi_results is not None:
+            self.rmi_plot.setText(f"RMI: {rmi_results:.2f}")
+
+        # Q3: Bubble plot (placeholder)
+        self.bubble_plot.setText(f"Bubbles: {len(bubbles)}")
+
+        # Q4: ROI progression (placeholder)
+        self.roi_progression.setText("ROI progression updated")
+
+    def convert_frame_to_qimage(self, frame):
+        """Convert OpenCV BGR frame to QImage for display."""
+        import cv2
+        from PyQt5.QtGui import QImage
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb_frame.shape
+        bytes_per_line = ch * w
+        return QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
+
 
 # =============================================================================
 # SECTION 5
@@ -12152,9 +12067,10 @@ from PyQt5.QtCore import QObject, pyqtSignal
 class ProcessingEngine(QObject):
     """
     Orchestrates the full CV pipeline.
-    Preserves all existing algorithms and outputs.
+    Receives frames from VideoThread, processes them, and emits results.
     """
-    frame_processed = pyqtSignal(object, object, object)  # frame, rmi_results, bubbles
+    frame_processed = pyqtSignal(object, object, object)  
+    # Emits: (original_frame, rmi_results, bubbles)
 
     def __init__(self, processing_state, parent=None):
         super().__init__(parent)
@@ -12162,30 +12078,48 @@ class ProcessingEngine(QObject):
 
         # Ensure bubble tracker exists in state
         if not hasattr(self.state, "bubble_tracker"):
-            # Directly use BubbleTracker defined earlier in this file
             self.state.bubble_tracker = BubbleTracker()
 
     def process_frame(self, frame):
         """
         Runs the complete image processing pipeline on a single frame.
+
+        Parameters
+        ----------
+        frame : np.ndarray
+            The raw frame from the video source.
         """
-        # Preprocessing
+        if frame is None:
+            return  # Safety check
+
+        # ---------------------------------------------------------------------
+        # Step 1: Preprocessing
+        # ---------------------------------------------------------------------
         preprocessed = preprocess_frame(frame, self.state)
 
-        # RMI computation
+        # ---------------------------------------------------------------------
+        # Step 2: RMI computation
+        # ---------------------------------------------------------------------
         rmi_results = compute_rmi_results(preprocessed, self.state)
 
-        # Bubble detection/tracking
+        # ---------------------------------------------------------------------
+        # Step 3: Bubble detection/tracking
+        # ---------------------------------------------------------------------
         bubbles = process_bubbles(preprocessed, self.state)
         self.state.bubble_tracker.update(bubbles)
 
-        # Update unified state
+        # ---------------------------------------------------------------------
+        # Step 4: Update shared state
+        # ---------------------------------------------------------------------
         self.state.last_frame = frame
         self.state.last_rmi_results = rmi_results
         self.state.last_bubbles = bubbles
 
-        # Notify UI listeners
+        # ---------------------------------------------------------------------
+        # Step 5: Emit results for UI
+        # ---------------------------------------------------------------------
         self.frame_processed.emit(frame, rmi_results, bubbles)
+
 
      
 # =============================================================================
@@ -17713,183 +17647,73 @@ class MainWindow(QMainWindow):
     • Trigger exports
     """
 
-
-    def __init__(
-        self,
-        video_source,
-        processing_engine,
-        video_thread,
-        dashboard
-    ):
-
+    def __init__(self, video_source, processing_engine, video_thread, dashboard):
         super().__init__()
 
-
         self.video_source = video_source
-
         self.processing_engine = processing_engine
-
         self.video_thread = video_thread
-
         self.dashboard = dashboard
 
-
-
         self.setup_window()
-
         self.setup_ui()
-
         self.connect_signals()
-
-
 
     # -------------------------------------------------------------------------
     # Window Setup
     # -------------------------------------------------------------------------
-
     def setup_window(self):
-
-        self.setWindowTitle(
-
-            APPLICATION_CONFIG["title"]
-
-        )
-
-
+        self.setWindowTitle(APPLICATION_CONFIG["title"])
         width, height = APPLICATION_CONFIG["window_size"]
-
-
-        self.resize(
-
-            width,
-
-            height
-
-        )
-
-
+        self.resize(width, height)
 
     # -------------------------------------------------------------------------
     # User Interface
     # -------------------------------------------------------------------------
-
     def setup_ui(self):
-
-
         central_widget = QWidget()
-
-
-        self.setCentralWidget(
-            central_widget
-        )
-
+        self.setCentralWidget(central_widget)
 
         layout = QVBoxLayout()
+        central_widget.setLayout(layout)
 
+        # Video display label
+        self.video_label = QLabel()
+        self.video_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.video_label)
 
-        central_widget.setLayout(
-            layout
-        )
+        # Scientific dashboard widget
+        layout.addWidget(self.dashboard)
 
+    # -------------------------------------------------------------------------
+    # Signal Connections
+    # -------------------------------------------------------------------------
+    def connect_signals(self):
+        # Connect ProcessingEngine output to MainWindow display
+        self.processing_engine.frame_processed.connect(self.update_display)
 
+        # Also connect ProcessingEngine output to Dashboard metrics
+        self.processing_engine.frame_processed.connect(self.dashboard.update_metrics)
 
-        # -----------------------------------------------------
-        # Scientific dashboard
-        # -----------------------------------------------------
+    # -------------------------------------------------------------------------
+    # Slot: Update Display
+    # -------------------------------------------------------------------------
+    def update_display(self, frame, rmi_results, bubbles):
+        """Update the video display with the latest processed frame."""
+        qimg = self.convert_frame_to_qimage(frame)
+        self.video_label.setPixmap(QPixmap.fromImage(qimg))
 
-        layout.addWidget(
+        # Optional: overlay bubbles or RMI results here
+        # self.draw_overlays(bubbles, rmi_results)
 
-            self.dashboard
-
-        )
-
-
-
-        # -----------------------------------------------------
-        # Control buttons
-        # -----------------------------------------------------
-
-        control_layout = QHBoxLayout()
-
-
-
-        self.start_button = QPushButton(
-            "Start Experiment"
-        )
-
-
-        self.pause_button = QPushButton(
-            "Pause"
-        )
-
-
-        self.stop_button = QPushButton(
-            "Stop"
-        )
-
-
-        self.export_button = QPushButton(
-            "Export Workbook"
-        )
-
-
-
-        control_layout.addWidget(
-
-            self.start_button
-
-        )
-
-
-        control_layout.addWidget(
-
-            self.pause_button
-
-        )
-
-
-        control_layout.addWidget(
-
-            self.stop_button
-
-        )
-
-
-        control_layout.addWidget(
-
-            self.export_button
-
-        )
-
-
-
-        layout.addLayout(
-
-            control_layout
-
-        )
-
-
-
-        # -----------------------------------------------------
-        # Status display
-        # -----------------------------------------------------
-
-        self.status_label = QLabel(
-            "Ready"
-        )
-
-
-        self.status_label.setAlignment(
-            Qt.AlignCenter
-        )
-
-
-        layout.addWidget(
-
-            self.status_label
-
-        )
+    def convert_frame_to_qimage(self, frame):
+        """Convert OpenCV BGR frame to QImage for display."""
+        import cv2
+        from PyQt5.QtGui import QImage
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb_frame.shape
+        bytes_per_line = ch * w
+        return QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
 
 
 
@@ -18118,103 +17942,66 @@ class MainWindow(QMainWindow):
 # APPLICATION ENTRY POINT
 # =============================================================================
 
-
 def main():
-
     """
     Version 6 Qt application entry point.
 
     Creates:
-
         QApplication
-
         VideoSource
-
+        ProcessingState
         ProcessingEngine
-
         VideoThread
-
         MainDashboard
-
         MainWindow
-
     """
 
-
-    app = QApplication(
-        sys.argv
-    )
-
+    # -------------------------------------------------------------------------
+    # Create application instance
+    # -------------------------------------------------------------------------
+    app = QApplication(sys.argv)
 
     # -------------------------------------------------------------------------
     # Create video source
     # -------------------------------------------------------------------------
-
-    video_config = VideoSourceConfig(
-
-        source=CONFIG.video_source
-
-    )
-
-
-    video_source = VideoSource(
-
-        video_config
-
-    )
-
-
+    video_config = VideoSourceConfig(source=CONFIG.video_source)
+    video_source = VideoSource(video_config)
 
     # -------------------------------------------------------------------------
-    # Create processing engine
+    # Create shared processing state
     # -------------------------------------------------------------------------
-
-    processing_engine = ProcessingEngine()
-
-
+    state = ProcessingState()  # or CalibrationState() if in calibration mode
 
     # -------------------------------------------------------------------------
-    # Create dashboard
+    # Create processing engine with state
     # -------------------------------------------------------------------------
-
-    dashboard = MainDashboard()
-
-
+    processing_engine = ProcessingEngine(state)
 
     # -------------------------------------------------------------------------
-    # Create video worker thread
+    # Create dashboard (pass state if it needs to display processing results)
     # -------------------------------------------------------------------------
+    dashboard = MainDashboard(state)
 
-    video_thread = VideoThread(
-
-        video_source,
-
-        processing_engine
-
-    )
-
-
+    # -------------------------------------------------------------------------
+    # Create video worker thread (engine passed as first arg)
+    # -------------------------------------------------------------------------
+    video_thread = VideoThread(processing_engine, video_source)
 
     # -------------------------------------------------------------------------
     # Create main window
     # -------------------------------------------------------------------------
-
     window = MainWindow(video_source, processing_engine, video_thread, dashboard)
-
-
     window.show()
 
-
+    # -------------------------------------------------------------------------
+    # Start video thread
+    # -------------------------------------------------------------------------
+    video_thread.start()
 
     # -------------------------------------------------------------------------
-    # Start Qt event loop
+    # Execute Qt application loop
     # -------------------------------------------------------------------------
-
-    sys.exit(
-
-        app.exec_()
-
-    )
+    sys.exit(app.exec_())
 
 
 
