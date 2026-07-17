@@ -1578,37 +1578,19 @@ class VideoThread(QThread):
     # Initialisation
     # -------------------------------------------------------------------------
 
-    def __init__(
-        self,
-        video_source=0,
-        parent=None
-    ):
+    def __init__(self, engine, video_source=0, parent=None):
+    super().__init__(parent)
 
-        super().__init__(parent)
+    self.engine = engine  # Store reference to ProcessingEngine
+    self.video_source = video_source
 
-
-        self.video_source = video_source
-
-
-        self.capture = None
-
-
-        self.running = False
-
-
-        self.paused = False
-
-
-        self.frame_number = 0
-
-
-        self.start_time = None
-
-
-        self.fps = 0.0
-
-
-        self.frame_interval = 0.0
+    self.capture = None
+    self.running = False
+    self.paused = False
+    self.frame_number = 0
+    self.start_time = None
+    self.fps = 0.0
+    self.frame_interval = 0.0
 
 
 
