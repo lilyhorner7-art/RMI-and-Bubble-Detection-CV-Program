@@ -10370,7 +10370,7 @@ def process_frame(self, frame):
     # -------------------------------------------------------------------------
     # Step 2: RMI computation
     # -------------------------------------------------------------------------
-    rmi_results = compute_rmi_results(preprocessed, self.state)
+    rmi_results = compute_rmi_results(preprocess_frame, self.state)
     self.state.last_rmi_results = rmi_results
 
     # Append to RMI history
@@ -10383,7 +10383,7 @@ def process_frame(self, frame):
     # -------------------------------------------------------------------------
     # Step 3: Bubble detection/tracking
     # -------------------------------------------------------------------------
-    bubbles = process_bubbles(preprocessed, self.state)
+    bubbles = process_bubbles(preprocess_frame, self.state)
     self.state.last_bubbles = bubbles
 
     if not hasattr(self.state, "bubble_history"):
