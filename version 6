@@ -5661,81 +5661,19 @@ class BubblePreprocessor:
     # Complete Preprocessing Pipeline
     # =========================================================================
 
-    def preprocess(
-        self,
-        outlet_roi,
-        calibration=None
-    ):
-        """
-        Complete preprocessing pipeline.
+    # Somewhere accessible (e.g., Section 6.2 or a utils module)
+def preprocess_frame(frame, state):
+    """
+    Wrapper to run the BubblePreprocessor pipeline.
+    """
+    preproc = BubblePreprocessor(state.bubble_config)
 
-        Returns
-        -------
-        dict
+    # Example pipeline: grayscale → blur
+    gray = preproc.grayscale(frame)
+    blurred = preproc.gaussian_blur(gray)
 
-            {
+    return blurred
 
-                "gray",
-
-                "blur",
-
-                "equalised",
-
-                "clahe",
-
-                "processed"
-
-            }
-
-        Each intermediate image is returned for debugging
-        and optional display in the PyQt5 dashboard.
-        """
-
-        gray = self.grayscale(
-
-            outlet_roi,
-
-            calibration
-
-        )
-
-        blurred = self.gaussian_blur(
-
-            gray
-
-        )
-
-        equalised = self.equalise(
-
-            blurred
-
-        )
-
-        clahe = self.clahe(
-
-            equalised
-
-        )
-
-        processed = self.morphology(
-
-            clahe
-
-        )
-
-        return {
-
-            "gray": gray,
-
-            "blur": blurred,
-
-            "equalised": equalised,
-
-            "clahe": clahe,
-
-            "processed": processed
-
-        }
 
 class BubbleSegmenter:
     """
