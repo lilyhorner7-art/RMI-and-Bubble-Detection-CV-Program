@@ -4370,13 +4370,7 @@ def run_calibration(
     # Create video thread
     # -------------------------------------------------------------------------
 
-    video_thread = VideoThread(
-
-        video_source
-
-    )
-
-
+    video_thread = VideoThread(processing_engine, video_source)
 
     # -------------------------------------------------------------------------
     # Create calibration window
@@ -18538,17 +18532,7 @@ def main():
     # Create main window
     # -------------------------------------------------------------------------
 
-    window = MainWindow(
-
-        video_source,
-
-        processing_engine,
-
-        video_thread,
-
-        dashboard
-
-    )
+    window = MainWindow(video_source, processing_engine, video_thread, dashboard)
 
 
     window.show()
