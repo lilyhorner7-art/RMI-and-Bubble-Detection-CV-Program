@@ -1670,224 +1670,44 @@ class VideoThread(QThread):
 
 
 
-    # -------------------------------------------------------------------------
-    # Thread Execution
-    # -------------------------------------------------------------------------
-
     def run(self):
-        """
-        Main acquisition loop.
+    """
+    Main acquisition loop.
 
-        Runs independently from the GUI.
-        """
+    Runs independently from the GUI.
+    """
+    if not self.open_source():
+        return
 
+    self.running = True
+    self.start_time = time.perf_counter()
 
-        if not self.open_source():
+    while self.running:
+        # Pause handling
+        if self.paused:
+            self.msleep(50)
+            continue
 
-            return
+        # Read frame
+        success, frame = self.capture.read()
+        if not success:
+            self.video_finished.emit()
+            break
 
+        self.frame_number += 1
 
+        # Timestamp
+        timestamp = self.get_timestamp()
 
-        self.running = True
+        # *** NEW: Process the frame through ProcessingEngine ***
+        self.engine.process_frame(frame)
 
+        # Emit raw frame if still needed for display
+        self.frame_ready.emit(frame, timestamp, self.frame_number)
 
-        self.start_time = time.perf_counter()
+        # Maintain approximate FPS
+        self.msleep(int(self.frame_interval * 1000))
 
-
-
-        while self.running:
-
-
-            # -------------------------------------------------------------
-            # Pause handling
-            # -------------------------------------------------------------
-
-            if self.paused:
-
-                self.msleep(50)
-
-                continue
-
-
-
-            # -------------------------------------------------------------
-            # Read frame
-            # -------------------------------------------------------------
-
-            success, frame = (
-                self.capture.read()
-            )
-
-
-            if not success:
-
-
-                self.video_finished.emit()
-
-                break
-
-
-
-            self.frame_number += 1
-
-
-
-            # -------------------------------------------------------------
-            # Timestamp
-            # -------------------------------------------------------------
-
-            timestamp = self.get_timestamp()
-
-
-
-            # -------------------------------------------------------------
-            # Emit frame
-            # -------------------------------------------------------------
-
-            self.frame_ready.emit(
-
-                frame,
-
-                timestamp,
-
-                self.frame_number
-
-            )
-
-
-
-            # -------------------------------------------------------------
-            # Maintain approximate FPS
-            # -------------------------------------------------------------
-
-            self.msleep(
-                int(
-                    self.frame_interval * 1000
-                )
-            )
-
-
-
-        self.release()
-
-
-
-    # -------------------------------------------------------------------------
-    # Timestamp
-    # -------------------------------------------------------------------------
-
-    def get_timestamp(self):
-        """
-        Returns the experimental time.
-
-        For MP4 files:
-            Uses OpenCV video timestamp.
-
-        For cameras:
-            Uses elapsed acquisition time.
-
-        Returns
-        -------
-        float
-
-            seconds
-        """
-
-
-        if self.capture is None:
-
-            return 0.0
-
-
-
-        # -------------------------------------------------------------
-        # Attempt video timestamp
-        # -------------------------------------------------------------
-
-        timestamp = (
-
-            self.capture.get(
-                cv2.CAP_PROP_POS_MSEC
-            )
-
-            /
-
-            1000.0
-
-        )
-
-
-
-        if timestamp > 0:
-
-            return timestamp
-
-
-
-        # -------------------------------------------------------------
-        # Camera fallback
-        # -------------------------------------------------------------
-
-        if self.start_time is None:
-
-            return 0.0
-
-
-
-        return (
-            time.perf_counter()
-            -
-            self.start_time
-        )
-
-
-
-    # -------------------------------------------------------------------------
-    # Control Functions
-    # -------------------------------------------------------------------------
-
-    def pause(self):
-        """
-        Pauses acquisition.
-        """
-
-        self.paused = True
-
-
-
-    def resume(self):
-        """
-        Resumes acquisition.
-        """
-
-        self.paused = False
-
-
-
-    def stop(self):
-        """
-        Stops the acquisition thread.
-        """
-
-        self.running = False
-
-
-
-    # -------------------------------------------------------------------------
-    # Release Resources
-    # -------------------------------------------------------------------------
-
-    def release(self):
-        """
-        Releases OpenCV resources.
-        """
-
-        if self.capture is not None:
-
-            self.capture.release()
-
-
-        self.capture = None
 
 # =============================================================================
 # SECTION 3.3
