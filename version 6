@@ -12483,24 +12483,27 @@ FRAME_TIMER = ProcessingTimer()
 # PROCESSING ENGINE
 # =============================================================================
 
-
 from PyQt5.QtCore import QObject, pyqtSignal
-from algorithms import preprocess_frame, compute_rmi_results, process_bubbles
-from bubble_tracker import BubbleTracker
 
 class ProcessingEngine(QObject):
+    """
+    Orchestrates the full CV pipeline.
+    Preserves all existing algorithms and outputs.
+    """
     frame_processed = pyqtSignal(object, object, object)  # frame, rmi_results, bubbles
 
     def __init__(self, processing_state, parent=None):
         super().__init__(parent)
         self.state = processing_state
+
+        # Ensure bubble tracker exists in state
         if not hasattr(self.state, "bubble_tracker"):
+            # Directly use BubbleTracker defined earlier in this file
             self.state.bubble_tracker = BubbleTracker()
 
     def process_frame(self, frame):
         """
-        Orchestrates the full CV pipeline.
-        Preserves all existing algorithms and outputs.
+        Runs the complete image processing pipeline on a single frame.
         """
         # Preprocessing
         preprocessed = preprocess_frame(frame, self.state)
@@ -12517,7 +12520,7 @@ class ProcessingEngine(QObject):
         self.state.last_rmi_results = rmi_results
         self.state.last_bubbles = bubbles
 
-        # Notify UI
+        # Notify UI listeners
         self.frame_processed.emit(frame, rmi_results, bubbles)
 
      
