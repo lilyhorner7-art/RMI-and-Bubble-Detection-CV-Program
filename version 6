@@ -4313,410 +4313,74 @@ class CalibrationController(QObject):
 # Run Calibration
 # =============================================================================
 
-
-def run_calibration(
-    video_source,
-    patch_size=40
-):
+def run_calibration(video_source, patch_size=40):
     """
     Launches the PyQt5 calibration workflow.
 
     Parameters
     ----------
-    video_source :
-        Camera index, video file, or virtual camera.
-
-    patch_size :
+    video_source : int | str
+        Camera index, video file path, or virtual camera device.
+    patch_size : int
         Calibration sampling patch size.
-
 
     Returns
     -------
-    CalibrationState
-
+    int
+        Qt application exit code.
     """
-
-
 
     # -------------------------------------------------------------------------
     # Create application instance
     # -------------------------------------------------------------------------
-
     app = QApplication.instance()
-
-
     if app is None:
-
-        app = QApplication(
-            sys.argv
-        )
-
-
+        app = QApplication(sys.argv)
 
     # -------------------------------------------------------------------------
-    # Create shared state
+    # Create shared calibration state
     # -------------------------------------------------------------------------
-
     state = CalibrationState()
-
-
-    state.source_video = (
-        video_source
-    )
-
-
+    state.source_video = video_source
+    state.patch_size = patch_size
 
     # -------------------------------------------------------------------------
-    # Create video thread
+    # Create processing engine
     # -------------------------------------------------------------------------
+    processing_engine = ProcessingEngine(state)
 
+    # -------------------------------------------------------------------------
+    # Create video thread (engine passed as first arg)
+    # -------------------------------------------------------------------------
     video_thread = VideoThread(processing_engine, video_source)
 
     # -------------------------------------------------------------------------
     # Create calibration window
     # -------------------------------------------------------------------------
-
-    window = CalibrationWindow(
-
-        video_thread,
-
-        state,
-
-    )
-
-
+    window = CalibrationWindow(video_thread, state)
 
     # -------------------------------------------------------------------------
-    # Calibration controller
+    # Create calibration controller
     # -------------------------------------------------------------------------
-
-    controller = CalibrationController(
-
-        state
-
-    )
-
-
+    controller = CalibrationController(state)
 
     # -------------------------------------------------------------------------
-    # Connect completion signals
+    # Connect signals
     # -------------------------------------------------------------------------
-
-    completed_state = []
-
-
-    cancelled = []
-
-
-
-    def calibration_complete(
-        updated_state
-    ):
-
-
-        controller.perform_calibration(
-
-            window.current_frame
-
-        )
-
-
-        completed_state.append(
-
-            updated_state
-
-        )
-
-
-        window.close()
-
-
-
-    def calibration_cancelled():
-
-        cancelled.append(
-            True
-        )
-
-
-        window.close()
-
-
-
-    window.calibration_complete.connect(
-
-        calibration_complete
-
-    )
-
-
-    window.calibration_cancelled.connect(
-
-        calibration_cancelled
-
-    )
-
-
+    video_thread.frame_ready.connect(window.update_frame)
+    processing_engine.frame_processed.connect(controller.handle_processed_frame)
 
     # -------------------------------------------------------------------------
-    # Start video
+    # Show window and start video thread
     # -------------------------------------------------------------------------
-
+    window.show()
     video_thread.start()
 
-
-    window.show()
-
-
-
     # -------------------------------------------------------------------------
-    # Execute Qt loop
+    # Execute Qt application loop
     # -------------------------------------------------------------------------
+    return app.exec_()
 
-    app.exec_()
-
-
-
-    # -------------------------------------------------------------------------
-    # Stop video
-    # -------------------------------------------------------------------------
-
-    video_thread.stop()
-
-
-    video_thread.wait()
-
-
-
-    if cancelled:
-
-        raise RuntimeError(
-
-            "Calibration cancelled."
-
-        )
-
-
-
-    if not completed_state:
-
-        raise RuntimeError(
-
-            "Calibration failed."
-
-        )
-
-
-
-    return completed_state[0]
-
-
-
-
-
-# =============================================================================
-# Run ROI Selection
-# =============================================================================
-
-
-def run_roi_selection(
-    video_source,
-    calibration_state,
-    roi_sizes=None
-):
-    """
-    Launches the PyQt5 ROI selection workflow.
-
-    Parameters
-    ----------
-    video_source :
-
-        Camera index or video file.
-
-
-    calibration_state :
-
-        Existing CalibrationState object.
-
-
-    roi_sizes :
-
-        Dictionary containing fixed ROI dimensions.
-
-
-
-    Returns
-    -------
-    CalibrationState
-
-    """
-
-
-
-    if roi_sizes is None:
-
-
-        roi_sizes = {
-
-
-            "Interface":
-
-                (200,200),
-
-
-            "Mixer 1":
-
-                (200,200),
-
-
-            "Mixer 2":
-
-                (200,200),
-
-
-            "Mixer 3":
-
-                (200,200),
-
-
-            "Mixer 4":
-
-                (200,200),
-
-
-            "Outlet":
-
-                (300,300)
-
-        }
-
-
-
-    # -------------------------------------------------------------------------
-    # Qt Application
-    # -------------------------------------------------------------------------
-
-    app = QApplication.instance()
-
-
-    if app is None:
-
-        app = QApplication(
-            sys.argv
-        )
-
-
-
-    # -------------------------------------------------------------------------
-    # Video Thread
-    # -------------------------------------------------------------------------
-
-    video_thread = VideoThread(
-
-        video_source
-
-    )
-
-
-
-    # -------------------------------------------------------------------------
-    # ROI Window
-    # -------------------------------------------------------------------------
-
-    window = ROISelectionWindow(
-
-        video_thread,
-
-        calibration_state,
-
-        roi_sizes
-
-    )
-
-
-
-    completed_state = []
-
-
-    cancelled = []
-
-
-
-    # -------------------------------------------------------------------------
-    # Signals
-    # -------------------------------------------------------------------------
-
-    window.roi_complete.connect(
-
-        lambda state:
-
-        completed_state.append(
-            state
-        )
-
-    )
-
-
-
-    window.roi_cancelled.connect(
-
-        lambda:
-
-        cancelled.append(
-            True
-        )
-
-    )
-
-
-
-    # -------------------------------------------------------------------------
-    # Start
-    # -------------------------------------------------------------------------
-
-    video_thread.start()
-
-
-    window.show()
-
-
-
-    app.exec_()
-
-
-
-    # -------------------------------------------------------------------------
-    # Cleanup
-    # -------------------------------------------------------------------------
-
-    video_thread.stop()
-
-
-    video_thread.wait()
-
-
-
-    if cancelled:
-
-        raise RuntimeError(
-
-            "ROI selection cancelled."
-
-        )
-
-
-
-    if not completed_state:
-
-        raise RuntimeError(
-
-            "ROI selection failed."
-
-        )
-
-
-
-    return completed_state[0]
 
 # =============================================================================
 # SECTION 4
