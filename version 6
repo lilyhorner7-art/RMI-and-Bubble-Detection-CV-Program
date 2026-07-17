@@ -226,6 +226,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QGridLayout,
+    QAction,
     QSizePolicy
 )
 
@@ -10427,10 +10428,6 @@ def process_frame(self, frame):
             alpha = 0.9
             self.state.fps = alpha * getattr(self.state, "fps", 0.0) + (1 - alpha) * (1.0 / dt)
 
-    # -------------------------------------------------------------------------
-    # Step 1: Preprocessing
-    # -------------------------------------------------------------------------
-    preprocessed = preprocess_frame(frame, self.state)
 
     # -------------------------------------------------------------------------
     # Step 2: RMI computation
@@ -10456,11 +10453,6 @@ def process_frame(self, frame):
     self.state.bubble_history.extend(bubbles)
     if len(self.state.bubble_history) > 200:
         self.state.bubble_history = self.state.bubble_history[-200:]
-
-    # -------------------------------------------------------------------------
-    # Step 4: ROI progression update
-    # -------------------------------------------------------------------------
-    update_roi_progression(preprocessed, self.state)
 
     # -------------------------------------------------------------------------
     # Step 5: Generate plots (Section 9.4)
@@ -12162,11 +12154,6 @@ class ProcessingEngine(QObject):
         if len(self.state.bubble_history) > 200:  # limit history length
             self.state.bubble_history = self.state.bubble_history[-200:]
     
-        # -------------------------------------------------------------------------
-        # Step 4: ROI progression update
-        # -------------------------------------------------------------------------
-        # This assumes you have a function that updates state.roi_progression
-        update_roi_progression(preprocessed, self.state)
     
         # -------------------------------------------------------------------------
         # Step 5: Generate plots (Section 9.4)
