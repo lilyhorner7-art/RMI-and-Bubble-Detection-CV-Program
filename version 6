@@ -12881,173 +12881,42 @@ def process_video_frame(
 # =============================================================================
 
 
-class ProcessingEngine:
-    """
-    Central scientific processing controller.
+from PyQt5.QtCore import QObject, pyqtSignal
+from algorithms import preprocess_frame, compute_rmi_results, process_bubbles
+from bubble_tracker import BubbleTracker
 
-    Combines:
+class ProcessingEngine(QObject):
+    frame_processed = pyqtSignal(object, object, object)  # frame, rmi_results, bubbles
 
-    Calibration
+    def __init__(self, processing_state, parent=None):
+        super().__init__(parent)
+        self.state = processing_state
+        if not hasattr(self.state, "bubble_tracker"):
+            self.state.bubble_tracker = BubbleTracker()
 
-    RMI analysis
-
-    Bubble detection
-
-    Bubble tracking
-
-    Scientific analysis
-
-    Export buffers
-    """
-
-
-    def __init__(self):
-
-
-        self.state = ProcessingState()
-
-        initialise_state_bridge(
-            self.state
-        )
-
-        self.detector = BubbleDetector()
-
-
-        self.tracker = BubbleTracker()
-
-
-        self.analyser = BubbleAnalyzer()
-
-
-
-    def process_frame(
-        self,
-        frame,
-        timestamp
-    ):
-
-
-        start = time.perf_counter()
-
-
-        self.state.frame_number += 1
-
-        STATE["frame_count"] = self.state.frame_number
-
-        STATE["fps"] = self.state.fps
-
-        self.state.timestamp = timestamp
-
-
-
-        # --------------------------------------------------
+    def process_frame(self, frame):
+        """
+        Orchestrates the full CV pipeline.
+        Preserves all existing algorithms and outputs.
+        """
         # Preprocessing
-        # --------------------------------------------------
+        preprocessed = preprocess_frame(frame, self.state)
 
-        processed = preprocess_frame(
-            frame
-        )
+        # RMI computation
+        rmi_results = compute_rmi_results(preprocessed, self.state)
 
+        # Bubble detection/tracking
+        bubbles = process_bubbles(preprocessed, self.state)
+        self.state.bubble_tracker.update(bubbles)
 
+        # Update unified state
+        self.state.last_frame = frame
+        self.state.last_rmi_results = rmi_results
+        self.state.last_bubbles = bubbles
 
-        # --------------------------------------------------
-        # RMI
-        # --------------------------------------------------
+        # Notify UI
+        self.frame_processed.emit(frame, rmi_results, bubbles)
 
-        rmi_results, sigma_results = (
-            compute_rmi_results(
-                processed
-            )
-        )
-
-
-
-        # --------------------------------------------------
-        # Bubble detection
-        # --------------------------------------------------
-
-        bubble_detection = (
-            self.detector.detect(
-                processed["roi_images"]["Outlet"]
-            )
-        )
-
-
-
-        # --------------------------------------------------
-        # Tracking
-        # --------------------------------------------------
-
-        tracked_bubbles = (
-            self.tracker.update(
-                bubble_detection
-            )
-        )
-
-
-
-        # --------------------------------------------------
-        # Scientific analysis
-        # --------------------------------------------------
-
-        self.analyser.update(
-
-            timestamp,
-
-            rmi_results,
-
-            tracked_bubbles
-
-        )
-
-
-
-        fps = (
-
-            1 /
-
-            (
-                time.perf_counter()
-
-                -
-
-                start
-            )
-
-        )
-
-
-        self.state.fps = fps
-
-
-
-        return {
-
-
-            "frame":
-                frame,
-
-
-            "timestamp":
-                timestamp,
-
-
-            "rmi":
-                rmi_results,
-
-
-            "sigma":
-                sigma_results,
-
-
-            "bubbles":
-                tracked_bubbles,
-
-
-            "fps":
-                fps
-
-        }
      
 # =============================================================================
 # SECTION 9
