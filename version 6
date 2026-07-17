@@ -4472,25 +4472,17 @@ DARK_THEME = {
 
 class MainDashboard(QMainWindow):
     """
-    Main scientific dashboard.
-
-    This window remains open throughout the experiment.
-
-    It receives processed data from the processing pipeline and updates:
-
+    Main scientific dashboard with four quadrants:
         Q1  Live video
         Q2  RMI plot
         Q3  Bubble plot + Outlet ROI
         Q4  ROI progression
     """
 
-    # Experiment control signals
     processing_started = pyqtSignal()
     processing_paused = pyqtSignal()
     processing_resumed = pyqtSignal()
     processing_stopped = pyqtSignal()
-
-    # Export signals
     export_frame_requested = pyqtSignal()
     export_workbook_requested = pyqtSignal()
 
@@ -4509,9 +4501,6 @@ class MainDashboard(QMainWindow):
     # Build Interface
     # -------------------------------------------------------------------------
     def build_interface(self):
-        """
-        Creates the four-quadrant dashboard layout.
-        """
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
@@ -4519,24 +4508,24 @@ class MainDashboard(QMainWindow):
         central_widget.setLayout(grid)
 
         # Q1: Live Video
-        self.video_label = QLabel("Live Video")
-        self.video_label.setAlignment(Qt.AlignCenter)
-        grid.addWidget(self.video_label, 0, 0)
+        self.q1_label = QLabel()
+        self.q1_label.setAlignment(Qt.AlignCenter)
+        grid.addWidget(self.q1_label, 0, 0)
 
         # Q2: RMI Plot
-        self.rmi_plot = QLabel("RMI Plot")
-        self.rmi_plot.setAlignment(Qt.AlignCenter)
-        grid.addWidget(self.rmi_plot, 0, 1)
+        self.q2_label = QLabel()
+        self.q2_label.setAlignment(Qt.AlignCenter)
+        grid.addWidget(self.q2_label, 0, 1)
 
         # Q3: Bubble Plot + Outlet ROI
-        self.bubble_plot = QLabel("Bubble Plot + Outlet ROI")
-        self.bubble_plot.setAlignment(Qt.AlignCenter)
-        grid.addWidget(self.bubble_plot, 1, 0)
+        self.q3_label = QLabel()
+        self.q3_label.setAlignment(Qt.AlignCenter)
+        grid.addWidget(self.q3_label, 1, 0)
 
         # Q4: ROI Progression
-        self.roi_progression = QLabel("ROI Progression")
-        self.roi_progression.setAlignment(Qt.AlignCenter)
-        grid.addWidget(self.roi_progression, 1, 1)
+        self.q4_label = QLabel()
+        self.q4_label.setAlignment(Qt.AlignCenter)
+        grid.addWidget(self.q4_label, 1, 1)
 
     # -------------------------------------------------------------------------
     # Toolbar
@@ -4580,29 +4569,77 @@ class MainDashboard(QMainWindow):
     def update_metrics(self, frame, rmi_results, bubbles):
         """
         Update all dashboard quadrants with the latest processed data.
+        Overlays metadata (frame number, timestamp, FPS) on Q1 live video.
         """
-        # Q1: Live video
-        self.video_label.setPixmap(QPixmap.fromImage(self.convert_frame_to_qimage(frame)))
+        # -------------------------------------------------------------------------
+        # Q1: Live video with metadata overlay
+        # -------------------------------------------------------------------------
+        if frame is None:
+            q1_img = create_panel(DASHBOARD_CONFIG["quadrant_width"], DASHBOARD_CONFIG["quadrant_height"])
+        else:
+            # Fit the frame to quadrant size
+            q1_img = fit_image(frame, (DASHBOARD_CONFIG["quadrant_width"], DASHBOARD_CONFIG["quadrant_height"]))
+    
+            # Overlay metadata from Section 9.5
+            frame_number = getattr(self.state, "frame_number", 0)
+            timestamp = getattr(self.state, "timestamp", 0.0)
+            fps = getattr(self.state, "fps", 0.0)
+    
+            q1_img = draw_dashboard_information(
+                q1_img,
+                frame_number=frame_number,
+                timestamp=timestamp,
+                fps=fps
+            )
+    
+        self.q1_label.setPixmap(self.numpy_to_qpixmap(q1_img))
+    
+        # -------------------------------------------------------------------------
+        # Q2: RMI plot
+        # -------------------------------------------------------------------------
+        if getattr(self.state, "last_rmi_plot", None) is not None:
+            q2_img = fit_image(self.state.last_rmi_plot, (DASHBOARD_CONFIG["quadrant_width"], DASHBOARD_CONFIG["quadrant_height"]))
+        else:
+            q2_img = create_panel(DASHBOARD_CONFIG["quadrant_width"], DASHBOARD_CONFIG["quadrant_height"])
+        self.q2_label.setPixmap(self.numpy_to_qpixmap(q2_img))
+    
+        # -------------------------------------------------------------------------
+        # Q3: Bubble plot
+        # -------------------------------------------------------------------------
+        if getattr(self.state, "last_bubble_plot", None) is not None:
+            q3_img = fit_image(self.state.last_bubble_plot, (DASHBOARD_CONFIG["quadrant_width"], DASHBOARD_CONFIG["quadrant_height"]))
+        else:
+            q3_img = create_panel(DASHBOARD_CONFIG["quadrant_width"], DASHBOARD_CONFIG["quadrant_height"])
+        self.q3_label.setPixmap(self.numpy_to_qpixmap(q3_img))
+    
+        # -------------------------------------------------------------------------
+        # Q4: ROI progression
+        # -------------------------------------------------------------------------
+        if getattr(self.state, "last_roi_progression", None) is not None:
+            q4_img = fit_image(self.state.last_roi_progression, (DASHBOARD_CONFIG["quadrant_width"], DASHBOARD_CONFIG["quadrant_height"]))
+        else:
+            q4_img = create_panel(DASHBOARD_CONFIG["quadrant_width"], DASHBOARD_CONFIG["quadrant_height"])
+        self.q4_label.setPixmap(self.numpy_to_qpixmap(q4_img))
 
-        # Q2: RMI plot (placeholder)
-        if rmi_results is not None:
-            self.rmi_plot.setText(f"RMI: {rmi_results:.2f}")
-
-        # Q3: Bubble plot (placeholder)
-        self.bubble_plot.setText(f"Bubbles: {len(bubbles)}")
-
-        # Q4: ROI progression (placeholder)
-        self.roi_progression.setText("ROI progression updated")
-
-    def convert_frame_to_qimage(self, frame):
-        """Convert OpenCV BGR frame to QImage for display."""
+    # -------------------------------------------------------------------------
+    # Helper: Convert NumPy image to QPixmap
+    # -------------------------------------------------------------------------
+    def numpy_to_qpixmap(self, img):
+        """Convert a NumPy BGR or RGB image to QPixmap."""
         import cv2
-        from PyQt5.QtGui import QImage
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        h, w, ch = rgb_frame.shape
-        bytes_per_line = ch * w
-        return QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        from PyQt5.QtGui import QImage, QPixmap
 
+        if img is None:
+            img = create_panel(DASHBOARD_CONFIG["quadrant_width"], DASHBOARD_CONFIG["quadrant_height"])
+
+        if len(img.shape) == 2:  # grayscale
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
+        rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb_img.shape
+        bytes_per_line = ch * w
+        qimg = QImage(rgb_img.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        return QPixmap.fromImage(qimg)
 
 # =============================================================================
 # SECTION 5
@@ -10355,86 +10392,93 @@ def validate_roi_images(roi_images):
 # Complete Frame Preprocessing Pipeline
 # -----------------------------------------------------------------------------
 
-def preprocess_frame(
-    frame,
-    frame_number,
-    timestamp
-):
+import time
+
+def process_frame(self, frame):
     """
-    Performs all preprocessing required before scientific analysis.
-
-    Workflow
-    --------
-    1. Store original frame
-    2. Generate calibrated grayscale image
-    3. Extract colour ROIs
-    4. Extract grayscale ROIs
-    5. Validate all ROIs
-    6. Package results
-
-    Parameters
-    ----------
-    frame : ndarray
-
-    frame_number : int
-
-    timestamp : float
-
-    Returns
-    -------
-    FramePreprocessingResult
+    Runs the complete image processing pipeline on a single frame.
+    Updates state with latest metrics, plots, and overlay metadata.
     """
+    if frame is None:
+        return  # Safety check
 
-    # ---------------------------------------------------------
-    # Create calibrated grayscale image
-    # ---------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # Step 0: Frame counter & timing
+    # -------------------------------------------------------------------------
+    if not hasattr(self.state, "frame_number"):
+        self.state.frame_number = 0
+    self.state.frame_number += 1
 
-    gray_frame = create_grayscale_frame(
-        frame
-    )
+    # Timestamp in seconds (relative to start)
+    if not hasattr(self.state, "_start_time"):
+        self.state._start_time = time.time()
+    self.state.timestamp = time.time() - self.state._start_time
 
-    # ---------------------------------------------------------
-    # Extract colour ROIs
-    # ---------------------------------------------------------
+    # FPS calculation
+    now = time.time()
+    if not hasattr(self.state, "_last_time"):
+        self.state._last_time = now
+        self.state.fps = 0.0
+    else:
+        dt = now - self.state._last_time
+        self.state._last_time = now
+        if dt > 0:
+            # Simple moving average for smoother FPS
+            alpha = 0.9
+            self.state.fps = alpha * getattr(self.state, "fps", 0.0) + (1 - alpha) * (1.0 / dt)
 
-    roi_images = extract_colour_rois(
-        frame
-    )
+    # -------------------------------------------------------------------------
+    # Step 1: Preprocessing
+    # -------------------------------------------------------------------------
+    preprocessed = preprocess_frame(frame, self.state)
 
-    # ---------------------------------------------------------
-    # Extract grayscale ROIs
-    # ---------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # Step 2: RMI computation
+    # -------------------------------------------------------------------------
+    rmi_results = compute_rmi_results(preprocessed, self.state)
+    self.state.last_rmi_results = rmi_results
 
-    roi_gray = extract_grayscale_rois(
-        gray_frame
-    )
+    # Append to RMI history
+    if not hasattr(self.state, "rmi_history"):
+        self.state.rmi_history = []
+    self.state.rmi_history.append(rmi_results)
+    if len(self.state.rmi_history) > PLOT_CONFIG["history_length"]:
+        self.state.rmi_history.pop(0)
 
-    # ---------------------------------------------------------
-    # Validate ROI extraction
-    # ---------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # Step 3: Bubble detection/tracking
+    # -------------------------------------------------------------------------
+    bubbles = process_bubbles(preprocessed, self.state)
+    self.state.last_bubbles = bubbles
 
-    validate_roi_images(roi_images)
-    validate_roi_images(roi_gray)
+    if not hasattr(self.state, "bubble_history"):
+        self.state.bubble_history = []
+    self.state.bubble_history.extend(bubbles)
+    if len(self.state.bubble_history) > 200:
+        self.state.bubble_history = self.state.bubble_history[-200:]
 
-    # ---------------------------------------------------------
-    # Package preprocessing results
-    # ---------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # Step 4: ROI progression update
+    # -------------------------------------------------------------------------
+    update_roi_progression(preprocessed, self.state)
 
-    return FramePreprocessingResult(
+    # -------------------------------------------------------------------------
+    # Step 5: Generate plots (Section 9.4)
+    # -------------------------------------------------------------------------
+    self.state.last_rmi_plot = render_rmi_plot(self.state)
+    self.state.last_bubble_plot = render_bubble_plot(self.state)
+    self.state.last_roi_progression = render_roi_progression(self.state)
 
-        original_frame=frame.copy(),
+    # -------------------------------------------------------------------------
+    # Step 6: Store last raw frame
+    # -------------------------------------------------------------------------
+    self.state.last_frame = frame
 
-        grayscale_frame=gray_frame,
+    # -------------------------------------------------------------------------
+    # Step 7: Emit results for UI
+    # -------------------------------------------------------------------------
+    self.frame_processed.emit(frame, rmi_results, bubbles)
 
-        roi_images=roi_images,
-
-        roi_gray=roi_gray,
-
-        frame_number=frame_number,
-
-        timestamp=timestamp
-
-    )
 
 
 # =============================================================================
@@ -12083,41 +12127,62 @@ class ProcessingEngine(QObject):
     def process_frame(self, frame):
         """
         Runs the complete image processing pipeline on a single frame.
-
-        Parameters
-        ----------
-        frame : np.ndarray
-            The raw frame from the video source.
+        Updates state with latest metrics and plot images.
         """
         if frame is None:
             return  # Safety check
-
-        # ---------------------------------------------------------------------
+    
+        # -------------------------------------------------------------------------
         # Step 1: Preprocessing
-        # ---------------------------------------------------------------------
+        # -------------------------------------------------------------------------
         preprocessed = preprocess_frame(frame, self.state)
-
-        # ---------------------------------------------------------------------
+    
+        # -------------------------------------------------------------------------
         # Step 2: RMI computation
-        # ---------------------------------------------------------------------
+        # -------------------------------------------------------------------------
         rmi_results = compute_rmi_results(preprocessed, self.state)
-
-        # ---------------------------------------------------------------------
-        # Step 3: Bubble detection/tracking
-        # ---------------------------------------------------------------------
-        bubbles = process_bubbles(preprocessed, self.state)
-        self.state.bubble_tracker.update(bubbles)
-
-        # ---------------------------------------------------------------------
-        # Step 4: Update shared state
-        # ---------------------------------------------------------------------
-        self.state.last_frame = frame
         self.state.last_rmi_results = rmi_results
+    
+        # Append to RMI history for plotting
+        if not hasattr(self.state, "rmi_history"):
+            self.state.rmi_history = []
+        self.state.rmi_history.append(rmi_results)
+        if len(self.state.rmi_history) > PLOT_CONFIG["history_length"]:
+            self.state.rmi_history.pop(0)
+    
+        # -------------------------------------------------------------------------
+        # Step 3: Bubble detection/tracking
+        # -------------------------------------------------------------------------
+        bubbles = process_bubbles(preprocessed, self.state)
         self.state.last_bubbles = bubbles
-
-        # ---------------------------------------------------------------------
-        # Step 5: Emit results for UI
-        # ---------------------------------------------------------------------
+    
+        if not hasattr(self.state, "bubble_history"):
+            self.state.bubble_history = []
+        self.state.bubble_history.extend(bubbles)
+        if len(self.state.bubble_history) > 200:  # limit history length
+            self.state.bubble_history = self.state.bubble_history[-200:]
+    
+        # -------------------------------------------------------------------------
+        # Step 4: ROI progression update
+        # -------------------------------------------------------------------------
+        # This assumes you have a function that updates state.roi_progression
+        update_roi_progression(preprocessed, self.state)
+    
+        # -------------------------------------------------------------------------
+        # Step 5: Generate plots (Section 9.4)
+        # -------------------------------------------------------------------------
+        self.state.last_rmi_plot = render_rmi_plot(self.state)
+        self.state.last_bubble_plot = render_bubble_plot(self.state)
+        self.state.last_roi_progression = render_roi_progression(self.state)
+    
+        # -------------------------------------------------------------------------
+        # Step 6: Store last raw frame
+        # -------------------------------------------------------------------------
+        self.state.last_frame = frame
+    
+        # -------------------------------------------------------------------------
+        # Step 7: Emit results for UI
+        # -------------------------------------------------------------------------
         self.frame_processed.emit(frame, rmi_results, bubbles)
 
 
@@ -12981,6 +13046,106 @@ def update_live_plots():
     }
 
     return plots
+
+#additonal plot stuff
+import cv2
+import numpy as np
+
+# =============================================================================
+# RMI Plot
+# =============================================================================
+def render_rmi_plot(state):
+    """
+    Render the RMI history plot as a NumPy BGR image.
+    Expects state.rmi_history to be a list/array of floats.
+    """
+    width = DASHBOARD_CONFIG["quadrant_width"]
+    height = DASHBOARD_CONFIG["quadrant_height"]
+
+    canvas = create_plot_canvas(width, height)
+    draw_plot_grid(canvas)
+
+    if not hasattr(state, "rmi_history") or len(state.rmi_history) < 2:
+        return canvas
+
+    # Plot line
+    left = PLOT_CONFIG["margin_left"]
+    right = width - PLOT_CONFIG["margin_right"]
+    top = PLOT_CONFIG["margin_top"]
+    bottom = height - PLOT_CONFIG["margin_bottom"]
+
+    # Normalize RMI values to fit in plot area
+    values = np.array(state.rmi_history[-PLOT_CONFIG["history_length"]:], dtype=np.float32)
+    min_val, max_val = np.min(values), np.max(values)
+    if max_val == min_val:
+        max_val += 1e-6  # avoid div by zero
+
+    x_step = (right - left) / max(1, len(values) - 1)
+    points = []
+    for i, val in enumerate(values):
+        x = int(left + i * x_step)
+        y = int(bottom - (val - min_val) / (max_val - min_val) * (bottom - top))
+        points.append((x, y))
+
+    cv2.polylines(canvas, [np.array(points, dtype=np.int32)], isClosed=False, color=(0, 255, 0), thickness=2)
+
+    return canvas
+
+
+# =============================================================================
+# Bubble Plot
+# =============================================================================
+def render_bubble_plot(state):
+    """
+    Render bubble positions/sizes as a scatter plot.
+    Expects state.bubble_history to be a list of (x, y, radius) tuples.
+    """
+    width = DASHBOARD_CONFIG["quadrant_width"]
+    height = DASHBOARD_CONFIG["quadrant_height"]
+
+    canvas = create_plot_canvas(width, height)
+    draw_plot_grid(canvas)
+
+    if not hasattr(state, "bubble_history") or len(state.bubble_history) == 0:
+        return canvas
+
+    # Draw bubbles
+    for (x, y, r) in state.bubble_history[-200:]:  # limit to last N bubbles
+        cv2.circle(canvas, (int(x), int(y)), int(r), (0, 200, 255), 1)
+
+    return canvas
+
+
+# =============================================================================
+# ROI Progression Plot
+# =============================================================================
+def render_roi_progression(state):
+    """
+    Render ROI progression as a heatmap-like plot.
+    Expects state.roi_progression to be a 2D NumPy array (float or int).
+    """
+    width = DASHBOARD_CONFIG["quadrant_width"]
+    height = DASHBOARD_CONFIG["quadrant_height"]
+
+    canvas = create_plot_canvas(width, height)
+    draw_plot_grid(canvas)
+
+    if not hasattr(state, "roi_progression") or state.roi_progression is None:
+        return canvas
+
+    # Normalize ROI progression to 0–255
+    roi_data = state.roi_progression.astype(np.float32)
+    min_val, max_val = np.min(roi_data), np.max(roi_data)
+    if max_val == min_val:
+        max_val += 1e-6
+    norm_data = ((roi_data - min_val) / (max_val - min_val) * 255).astype(np.uint8)
+
+    # Apply colormap
+    heatmap = cv2.applyColorMap(norm_data, cv2.COLORMAP_JET)
+
+    # Fit into plot area
+    fitted = fit_image(heatmap, (width, height))
+    return fitted
 
 # =============================================================================
 # SECTION 9.5
