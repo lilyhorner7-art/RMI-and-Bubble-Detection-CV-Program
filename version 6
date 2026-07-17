@@ -12503,54 +12503,6 @@ FRAME_TIMER = ProcessingTimer()
 
 # removed global process_frame()
 
-
-# -----------------------------------------------------------------------------
-# Batch Processing Helper
-# -----------------------------------------------------------------------------
-
-def process_video_frame(
-    frame,
-    frame_number,
-    timestamp
-):
-    """
-    Convenience wrapper used by the video-processing thread.
-
-    Any future exception handling or logging can be added
-    here without modifying process_frame().
-
-    Returns
-    -------
-    FrameResult
-    """
-
-    try:
-
-        return process_frame(
-
-            frame,
-
-            frame_number,
-
-            timestamp
-
-        )
-
-    except Exception as error:
-
-        print()
-
-        print("=" * 60)
-        print("FRAME PROCESSING ERROR")
-        print("=" * 60)
-        print(f"Frame : {frame_number}")
-        print(f"Time  : {timestamp:.3f} s")
-        print(error)
-        print("=" * 60)
-
-        return None
-    
-
 # =============================================================================
 # PROCESSING ENGINE
 # =============================================================================
